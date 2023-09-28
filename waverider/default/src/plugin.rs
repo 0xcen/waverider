@@ -121,13 +121,18 @@ impl GeyserPlugin for SupabasePlugin {
     fn on_unload(&mut self) {}
 
     fn update_account(
-        &mut self,
+        &self,
         account: ReplicaAccountInfoVersions,
         _slot: u64,
         is_startup: bool,
     ) -> PluginResult<()> {
         let account_info = match account {
-            ReplicaAccountInfoVersions::V0_0_1(account_info) => account_info,
+            ReplicaAccountInfoVersions::V0_0_1(_) => {
+                return Err(GeyserPluginError::AccountsUpdateError {
+                    msg: "V1 not supported, please upgrade your Solana CLI Version".to_string(),
+                });
+            }
+            ReplicaAccountInfoVersions::V0_0_3(account_info) => account_info,
             ReplicaAccountInfoVersions::V0_0_2(_) => {
                 return Err(GeyserPluginError::AccountsUpdateError {
                     msg: "V1 not supported, please upgrade your Solana CLI Version".to_string(),
@@ -135,15 +140,15 @@ impl GeyserPlugin for SupabasePlugin {
             }
         };
 
+        // println!("account change");
         println!("Account owner: {:#?}", account_info.owner.len());
+
+        if pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q").to_bytes() == account_info.owner
+        {
         println!(
             "Owner pubkey: {:#?}",
             pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q").to_bytes()
         );
-
-        if pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q").to_bytes() == account_info.owner
-        {
-            println!("conditions met");
         };
 
         // self.accounts.iter().for_each(|account| {
@@ -178,7 +183,7 @@ impl GeyserPlugin for SupabasePlugin {
         Ok(())
     }
 
-    fn notify_end_of_startup(&mut self) -> PluginResult<()> {
+    fn notify_end_of_startup(&self) -> PluginResult<()> {
         Ok(())
     }
 
