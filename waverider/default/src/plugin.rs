@@ -1,11 +1,14 @@
 use async_std::os::unix::net::UnixDatagram;
+use hyper::body::Buf;
 use postgrest::Postgrest;
+use pyth_sdk_solana::{self, load_price_feed_from_account_info};
 use serde::Deserialize;
 use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
 use solana_client::rpc_filter::{Memcmp, MemcmpEncodedBytes, RpcFilterType};
 use solana_geyser_plugin_interface::geyser_plugin_interface::{
     GeyserPlugin, ReplicaAccountInfoVersions, Result as PluginResult,
 };
+
 use solana_geyser_plugin_interface::geyser_plugin_interface::{
     GeyserPluginError, ReplicaAccountInfo,
 };
@@ -13,7 +16,9 @@ use solana_geyser_plugin_interface::geyser_plugin_interface::{
 use solana_account_decoder::UiAccountEncoding;
 
 use solana_client::rpc_client::RpcClient;
-use solana_program::pubkey;
+use solana_program::account_info::AccountInfo;
+use solana_program::pubkey::Pubkey;
+use solana_program::{borsh, pubkey};
 use solana_sdk::client;
 use solana_sdk::commitment_config::CommitmentConfig;
 
@@ -64,35 +69,35 @@ impl GeyserPlugin for SupabasePlugin {
 
     fn on_load(&mut self, config_file: &str) -> PluginResult<()> {
         // todo: get trigger account bytes
-        let TRIGGER_ACCOUNT_DISCRIMINATOR: Vec<u8> = vec![77, 155, 35, 144, 38, 14, 106, 88];
+        // let TRIGGER_ACCOUNT_DISCRIMINATOR: Vec<u8> = vec![77, 155, 35, 144, 38, 14, 106, 88];
 
-        let connection = RpcClient::new_with_commitment(
-            "https://global.rpc.hellomoon.io/5d77d2b5-8b58-4131-95d7-ba9c59499a1c".to_string(),
-            CommitmentConfig::confirmed(),
-        );
+        // let connection = RpcClient::new_with_commitment(
+        //     "https://global.rpc.hellomoon.io/5d77d2b5-8b58-4131-95d7-ba9c59499a1c".to_string(),
+        //     CommitmentConfig::confirmed(),
+        // );
 
-        let filters = Some(vec![RpcFilterType::Memcmp(Memcmp {
-            offset: 0,
-            bytes: MemcmpEncodedBytes::Bytes(TRIGGER_ACCOUNT_DISCRIMINATOR),
-            encoding: None,
-        })]);
+        // let filters = Some(vec![RpcFilterType::Memcmp(Memcmp {
+        //     offset: 0,
+        //     bytes: MemcmpEncodedBytes::Bytes(TRIGGER_ACCOUNT_DISCRIMINATOR),
+        //     encoding: None,
+        // })]);
 
-        let accounts = connection
-            .get_program_accounts_with_config(
-                &pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q"),
-                RpcProgramAccountsConfig {
-                    with_context: Some(false),
-                    filters,
-                    account_config: RpcAccountInfoConfig {
-                        commitment: Some(connection.commitment()),
-                        encoding: Some(UiAccountEncoding::Base64),
-                        ..RpcAccountInfoConfig::default()
-                    },
-                },
-            )
-            .unwrap();
+        // let accounts = connection
+        //     .get_program_accounts_with_config(
+        //         &pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q"),
+        //         RpcProgramAccountsConfig {
+        //             with_context: Some(false),
+        //             filters,
+        //             account_config: RpcAccountInfoConfig {
+        //                 commitment: Some(connection.commitment()),
+        //                 encoding: Some(UiAccountEncoding::Base64),
+        //                 ..RpcAccountInfoConfig::default()
+        //             },
+        //         },
+        //     )
+        //     .unwrap();
 
-        println!("TriggrAccounts: {:#?}", accounts[0]);
+        // println!("TriggrAccounts: {:#?}", accounts[0]);
 
         println!("config file: {}", config_file);
         let mut config = match Configuration::load(config_file) {
@@ -109,10 +114,10 @@ impl GeyserPlugin for SupabasePlugin {
             Postgrest::new(&config.supabase_url).insert_header("apikey", &config.supabase_key),
         );
 
-        self.accounts = accounts
-            .iter()
-            .map(|account| account.0.to_bytes())
-            .collect();
+        // self.accounts = accounts
+        //     .iter()
+        //     .map(|account| account.0.to_bytes())
+        //     .collect();
 
         self.configuration = Some(config);
         Ok(())
@@ -132,23 +137,38 @@ impl GeyserPlugin for SupabasePlugin {
                     msg: "V1 not supported, please upgrade your Solana CLI Version".to_string(),
                 });
             }
-            ReplicaAccountInfoVersions::V0_0_3(account_info) => account_info,
             ReplicaAccountInfoVersions::V0_0_2(_) => {
                 return Err(GeyserPluginError::AccountsUpdateError {
                     msg: "V1 not supported, please upgrade your Solana CLI Version".to_string(),
                 });
             }
+            ReplicaAccountInfoVersions::V0_0_3(account_info) => account_info,
         };
+        let pyth_program_devnet = pubkey!("gSbePebfvPy7tRqimPoVecS2UsBvYv46ynrzWocc92s");
 
-        // println!("account change");
-        println!("Account owner: {:#?}", account_info.owner.len());
+        if pyth_program_devnet.to_bytes() == account_info.owner {
+            let account_pubkey = Pubkey::try_from(account_info.pubkey).unwrap();
+            let owner_pubkey = Pubkey::try_from(account_info.owner).unwrap();
 
-        if pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q").to_bytes() == account_info.owner
-        {
-        println!(
-            "Owner pubkey: {:#?}",
-            pubkey!("41NuR2mieT98yDQpXmwDzBZ24sz9UMAieorCr8Mw9C8Q").to_bytes()
-        );
+            let data = &mut account_info.data.to_vec();
+            let mut lamports = account_info.lamports;
+            let acc_info = AccountInfo::new(
+                &account_pubkey,
+                false,
+                false,
+                &mut lamports,
+                data,
+                &owner_pubkey,
+                account_info.executable,
+                account_info.rent_epoch,
+            );
+            let price_feed = load_price_feed_from_account_info(&acc_info).map_err(|_| {
+                GeyserPluginError::AccountsUpdateError {
+                    msg: "Failed to parse Pyth price account".into(),
+                }
+            })?;
+
+            println!("Price feed: {}", price_feed.get_price_unchecked().price);
         };
 
         // self.accounts.iter().for_each(|account| {
