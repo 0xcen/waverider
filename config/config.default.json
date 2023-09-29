@@ -1,10 +1,3 @@
 {
-<<<<<<< Updated upstream
-  "libpath": "../waverider/default/target/debug/libwaverider_default.so",
-  "supabase_url": "<url>/rest/v1",
-  "supabase_key": "<key>",
-  "programs": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"]
-=======
   "libpath": "../waverider/default/target/debug/libwaverider_default.so"
->>>>>>> Stashed changes
 }
